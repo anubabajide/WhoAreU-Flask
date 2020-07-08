@@ -1,4 +1,5 @@
 import os
+import time
 from flask import Flask, abort, request, jsonify, g, url_for
 from flask_sqlalchemy import SQLAlchemy
 from flask_httpauth import HTTPBasicAuth
@@ -45,10 +46,14 @@ class User(db.Model):
         return User.query.get(data['id'])
 
 @auth.verify_password
-def verify_password(username, password):
-    user = User.query.filter_by(username = username).first()
-    if not user or not user.verify_password(password):
-        return False
+def verify_password(username_or_token, password):
+    # first try token
+    user = User.verify_auth_token(username_or_token)
+    # then check for username and password pair
+    if not user:
+        user = User.query.filter_by(username = username_or_token).first()
+        if not user or not user.verify_password(password):
+            return False
     g.user = user
     return True
 
@@ -68,11 +73,13 @@ def register():
     db.session.commit()
     return (jsonify({'username': user.username}), 201)
 
+
 @app.route('/api/login')
 @auth.login_required
 def get_token():
-    token = g.user.generate_auth_token()
-    return jsonify({ 'token': token.decode('ascii') })
+    token = g.user.generate_auth_token(600)
+    return jsonify({ 'token': token.decode('ascii'), 'duration': 600 })
+
 
 @app.route('/api/dothis', methods=['GET'])
 @auth.login_required
