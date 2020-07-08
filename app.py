@@ -29,7 +29,28 @@ class User(db.Model):
 
     def verify_password(self, password):
         return check_password_hash(self.password_hash, password)
+    
+    def generate_auth_token(self, expires_in = 600):
+        return jwt.encode(
+            { 'id': self.id, 'exp': time.time() + expires_in }, 
+            app.config['SECRET_KEY'], algorithm='HS256')
 
+    @staticmethod
+    def verify_auth_token(token):
+        try:
+            data = jwt.decode(token, app.config['SECRET_KEY'],
+            algorithm=['HS256'])
+        except:
+            return 
+        return User.query.get(data['id'])
+
+@auth.verify_password
+def verify_password(username, password):
+    user = User.query.filter_by(username = username).first()
+    if not user or not user.verify_password(password):
+        return False
+    g.user = user
+    return True
 
 @app.route('/api/register', methods=['POST'])
 def register():
@@ -46,6 +67,17 @@ def register():
     db.session.add(user)
     db.session.commit()
     return (jsonify({'username': user.username}), 201)
+
+@app.route('/api/login')
+@auth.login_required
+def get_token():
+    token = g.user.generate_auth_token()
+    return jsonify({ 'token': token.decode('ascii') })
+
+@app.route('/api/dothis', methods=['GET'])
+@auth.login_required
+def do_this():
+    return jsonify({ 'message':'It is done {}'.format(g.user.username) })
 
 
 if __name__ == "__main__":
